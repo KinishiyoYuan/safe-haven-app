@@ -1,209 +1,117 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
 
 interface MapPickerProps {
   latitude: number;
   longitude: number;
-  radius: number; // in kilometers
+  radius: number;
   onLocationChange: (lat: number, lng: number) => void;
 }
 
 export default function MapPicker({ latitude, longitude, radius, onLocationChange }: MapPickerProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-  
+
   const [markerPosition, setMarkerPosition] = useState({
-    latitude: latitude || 14.5995, // Default to Manila
+    latitude: latitude || 14.5995,
     longitude: longitude || 120.9842
   });
 
-  // Update marker position when props change (for geocoding)
   useEffect(() => {
-    // Only update if map is loaded and coordinates are valid
-    if (!latitude || !longitude || !map.current || !marker.current || !mapLoaded) {
-      return;
-    }
+    if (typeof window === 'undefined' || !mapContainer.current || mapRef.current) return;
 
-    const newLat = latitude;
-    const newLng = longitude;
-    
-    // Skip if coordinates haven't actually changed significantly
-    if (Math.abs(newLat - markerPosition.latitude) < 0.0001 && 
-        Math.abs(newLng - markerPosition.longitude) < 0.0001) {
-      return;
-    }
-
-    console.log('📍 Updating map to new coordinates:', { newLat, newLng });
-    
-    // Update marker
-    marker.current.setLngLat([newLng, newLat]);
-    
-    // Update circle only if source exists
-    if (map.current.getSource('radius-circle')) {
-      const source = map.current.getSource('radius-circle') as mapboxgl.GeoJSONSource;
-      source.setData(createCircleGeoJSON([newLng, newLat], radius).data);
-    }
-    
-    // Center map on new location
-    map.current.flyTo({
-      center: [newLng, newLat],
-      zoom: 14,
-      duration: 1500
-    });
-    
-    // Update state
-    setMarkerPosition({ latitude: newLat, longitude: newLng });
-  }, [latitude, longitude, mapLoaded, radius]);
-
-  // Function to create circle GeoJSON
-  const createCircleGeoJSON = (center: [number, number], radiusInKm: number) => {
-    const points = 64;
-    const coords = {
-      latitude: center[1],
-      longitude: center[0]
-    };
-
-    const km = radiusInKm;
-    const ret = [];
-    const distanceX = km / (111.320 * Math.cos((coords.latitude * Math.PI) / 180));
-    const distanceY = km / 110.574;
-
-    for (let i = 0; i < points; i++) {
-      const theta = (i / points) * (2 * Math.PI);
-      const x = distanceX * Math.cos(theta);
-      const y = distanceY * Math.sin(theta);
-      ret.push([coords.longitude + x, coords.latitude + y]);
-    }
-    ret.push(ret[0]);
-
-    return {
-      type: 'geojson' as const,
-      data: {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [ret]
-        },
-        properties: {}
-      }
-    };
-  };
-
-  useEffect(() => {
-    if (!mapContainer.current) return;
-
-    // Initialize map with current prop values
-    mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
-    
-    const initialLat = latitude || 14.5995;
-    const initialLng = longitude || 120.9842;
-    
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [initialLng, initialLat],
-      zoom: 11
-    });
-
-    // Create custom marker element
-    const el = document.createElement('div');
-    el.innerHTML = `
-      <svg width="30" height="40" viewBox="0 0 30 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M15 0C6.716 0 0 6.716 0 15c0 8.284 15 25 15 25s15-16.716 15-25c0-8.284-6.716-15-15-15z" fill="#0038A8"/>
-        <circle cx="15" cy="15" r="5" fill="white"/>
-      </svg>
-    `;
-    el.style.cursor = 'pointer';
-
-    // Add marker with current prop values
-    marker.current = new mapboxgl.Marker(el)
-      .setLngLat([initialLng, initialLat])
-      .addTo(map.current);
-
-    // Wait for map to load before adding layers
-    map.current.on('load', () => {
-      if (!map.current) return;
-
-      // Add circle source and layer with current prop values
-      map.current.addSource('radius-circle', createCircleGeoJSON(
-        [initialLng, initialLat],
-        radius
-      ));
-
-      map.current.addLayer({
-        id: 'radius-circle-fill',
-        type: 'fill',
-        source: 'radius-circle',
-        paint: {
-          'fill-color': '#0038A8',
-          'fill-opacity': 0.2
-        }
+    import('leaflet').then((L) => {
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      map.current.addLayer({
-        id: 'radius-circle-outline',
-        type: 'line',
-        source: 'radius-circle',
-        paint: {
-          'line-color': '#0038A8',
-          'line-width': 2,
-          'line-opacity': 0.8
-        }
+      const initialLat = latitude || 14.5995;
+      const initialLng = longitude || 120.9842;
+
+      const map = L.map(mapContainer.current!).setView([initialLat, initialLng], 11);
+      mapRef.current = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      const customIcon = L.divIcon({
+        html: `<svg width="30" height="40" viewBox="0 0 30 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 0C6.716 0 0 6.716 0 15c0 8.284 15 25 15 25s15-16.716 15-25c0-8.284-6.716-15-15-15z" fill="#0038A8"/>
+          <circle cx="15" cy="15" r="5" fill="white"/>
+        </svg>`,
+        className: '',
+        iconSize: [30, 40],
+        iconAnchor: [15, 40],
       });
 
-      // Mark map as loaded
+      const marker = L.marker([initialLat, initialLng], { icon: customIcon, draggable: true }).addTo(map);
+      markerRef.current = marker;
+
+      const circle = L.circle([initialLat, initialLng], {
+        radius: radius * 1000,
+        color: '#0038A8',
+        fillColor: '#0038A8',
+        fillOpacity: 0.2,
+        weight: 2,
+      }).addTo(map);
+      circleRef.current = circle;
+
+      map.on('click', (e: any) => {
+        const { lat, lng } = e.latlng;
+        marker.setLatLng([lat, lng]);
+        circle.setLatLng([lat, lng]);
+        setMarkerPosition({ latitude: lat, longitude: lng });
+        onLocationChange(lat, lng);
+      });
+
+      marker.on('dragend', (e: any) => {
+        const { lat, lng } = e.target.getLatLng();
+        circle.setLatLng([lat, lng]);
+        setMarkerPosition({ latitude: lat, longitude: lng });
+        onLocationChange(lat, lng);
+      });
+
       setMapLoaded(true);
     });
 
-    // Handle map clicks
-    map.current.on('click', (e) => {
-      const { lng, lat } = e.lngLat;
-      
-      // Update marker position
-      if (marker.current) {
-        marker.current.setLngLat([lng, lat]);
-      }
-
-      // Update circle position
-      if (map.current && map.current.getSource('radius-circle')) {
-        const source = map.current.getSource('radius-circle') as mapboxgl.GeoJSONSource;
-        source.setData(createCircleGeoJSON([lng, lat], radius).data);
-      }
-      
-      // Update state
-      setMarkerPosition({ latitude: lat, longitude: lng });
-      onLocationChange(lat, lng);
-    });
-
-    // Cleanup
     return () => {
-      if (map.current) {
-        map.current.remove();
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
     };
-  }, []); // Only run once on mount
+  }, []);
 
-  // Update circle when radius changes
   useEffect(() => {
-    if (map.current && map.current.getSource('radius-circle')) {
-      const source = map.current.getSource('radius-circle') as mapboxgl.GeoJSONSource;
-      source.setData(createCircleGeoJSON(
-        [markerPosition.longitude, markerPosition.latitude],
-        radius
-      ).data);
-    }
-  }, [radius, markerPosition]);
+    if (!mapRef.current || !markerRef.current || !circleRef.current || !latitude || !longitude || !mapLoaded) return;
+    if (Math.abs(latitude - markerPosition.latitude) < 0.0001 &&
+        Math.abs(longitude - markerPosition.longitude) < 0.0001) return;
+    markerRef.current.setLatLng([latitude, longitude]);
+    circleRef.current.setLatLng([latitude, longitude]);
+    mapRef.current.flyTo([latitude, longitude], 14);
+    setMarkerPosition({ latitude, longitude });
+  }, [latitude, longitude, mapLoaded]);
+
+  useEffect(() => {
+    if (!circleRef.current) return;
+    circleRef.current.setRadius(radius * 1000);
+  }, [radius]);
 
   return (
     <div className="relative">
-      <div 
-        ref={mapContainer} 
-        className="rounded-lg overflow-hidden border border-gray-300" 
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+      <div
+        ref={mapContainer}
+        className="rounded-lg overflow-hidden border border-gray-300"
         style={{ height: '400px' }}
       />
       <div className="mt-2 text-sm text-gray-600">
