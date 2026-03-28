@@ -2,7 +2,7 @@
   "expo": {
     "name": "SafeHaven",
     "slug": "safehaven-mobile",
-    "version": "1.0.0",
+    "version": "2.0.0 nara",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/logo.png",
@@ -66,14 +66,15 @@
       ],
       "./plugins/withSilentSMS.js"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "658ac31a-7930-47e9-9adc-8126ed6a438a"
-      }
-    },
     "runtimeVersion": "1.0.0",
     "updates": {
-      "url": "https://u.expo.dev/658ac31a-7930-47e9-9adc-8126ed6a438a"
+      "url": "https://u.expo.dev/d9068158-54bd-40c6-8e97-3733b129456c"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d9068158-54bd-40c6-8e97-3733b129456c"
+      },
+      "apiUrl": "https://safe-haven-app-backend.onrender.com/api/v1"
     }
   }
 }
