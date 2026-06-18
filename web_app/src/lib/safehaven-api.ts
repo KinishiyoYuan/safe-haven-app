@@ -179,6 +179,7 @@ export const alertsApi = {
           createdBy: alert.created_by,
           createdAt: alert.created_at,
           updatedAt: alert.updated_at,
+          source: alert.source
         };
       });
     }
@@ -535,6 +536,23 @@ export const statsApi = {
   },
 };
 
+// Weather API
+export const weatherApi = {
+  getForecasts: async () => {
+    console.log('📡 Fetching weather forecasts');
+    const response = await api.get('/weather/forecasts');
+    console.log('📦 Weather forecasts response:', response.data);
+    return response.data;
+  },
+  
+  getForecastAlerts: async () => {
+    console.log('📡 Fetching forecast-triggered alerts');
+    const response = await api.get('/weather/forecast-alerts');
+    console.log('📦 Forecast alerts response:', response.data);
+    return response.data;
+  },
+};
+
 // Admin API
 export const adminApi = {
   getStats: async () => {
@@ -565,19 +583,35 @@ export const adminApi = {
     return response.data;
   },
 
-  // Weather API
+  // Weather API - Use the existing weather endpoints
   weather: {
     getPhilippines: async () => {
       console.log('📡 Fetching Philippines weather');
-      const response = await api.get('/admin/weather/philippines');
+      // Use the existing /weather/current endpoint instead of /admin/weather/philippines
+      const response = await api.get('/weather/current');
       console.log('📦 Weather response:', response.data);
+      // Transform response to match expected format
+      if (response.data.status === 'success') {
+        return {
+          success: true,
+          data: response.data.data
+        };
+      }
       return response.data;
     },
     
     getLocation: async (lat: number, lon: number) => {
       console.log('📡 Fetching weather for location:', lat, lon);
-      const response = await api.get('/admin/weather/location', { params: { lat, lon } });
+      // Use the existing /weather/forecast endpoint
+      const response = await api.get('/weather/forecast', { params: { lat, lon, hours: 24 } });
       console.log('📦 Location weather response:', response.data);
+      // Transform response to match expected format
+      if (response.data.status === 'success') {
+        return {
+          success: true,
+          data: response.data.data
+        };
+      }
       return response.data;
     },
   },

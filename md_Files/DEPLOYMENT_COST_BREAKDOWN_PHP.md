@@ -125,7 +125,7 @@
 | Geocoding | 40,000 requests/month | $5 per 1,000 requests | ₱280 per 1,000 |
 | **TOTAL** | **₱0/month** | If under free tier | ✅ Likely free for small scale |
 
-**Your API Key**: `AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao`
+**Your API Key**: `GOOGLE_MAPS_API_KEY_PLACEHOLDER`
 
 ---
 

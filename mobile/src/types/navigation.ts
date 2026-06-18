@@ -33,6 +33,7 @@ export type MainTabParamList = {
   Incidents: NavigatorScreenParams<IncidentsStackParamList>;
   Family: NavigatorScreenParams<FamilyStackParamList>;
   Profile: NavigatorScreenParams<ProfileStackParamList>;
+  Weather: NavigatorScreenParams<WeatherStackParamList>;
 };
 
 // Alerts Stack Navigator
@@ -46,6 +47,7 @@ export type CentersStackParamList = {
   CentersMap: undefined;
   CentersList: undefined;
   CenterDetails: { centerId: number };
+  MyReservations: undefined;
 };
 
 // Guides Stack Navigator
@@ -77,6 +79,10 @@ export type ProfileStackParamList = {
   EditProfile: undefined;
   Settings: undefined;
   About: undefined;
+};
+
+export type WeatherStackParamList = {
+  WeatherForecast: undefined;
 };
 
 // Type helpers for navigation props

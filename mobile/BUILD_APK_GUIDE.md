@@ -117,7 +117,7 @@ adb install path/to/safehaven-1.0.0.apk
 Your app uses these environment variables (from `.env`):
 ```
 EXPO_PUBLIC_API_URL=http://192.168.1.8:3001/api/v1
-EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY_PLACEHOLDER
 ```
 
 **Important:** For production builds, update `EXPO_PUBLIC_API_URL` to your production backend URL.

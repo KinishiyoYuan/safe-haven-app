@@ -111,7 +111,7 @@ Then open the app and watch the logs.
 Make sure your `.env` file has:
 ```
 EXPO_PUBLIC_API_URL=https://safe-haven-backend-api.onrender.com/api/v1
-EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=GOOGLE_MAPS_API_KEY_PLACEHOLDER
 ```
 
 ## Build Command Reference

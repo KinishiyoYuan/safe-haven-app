@@ -29,13 +29,18 @@ import {
 
 interface Alert {
   id: number;
-  type: AlertType;
-  severity: AlertSeverity;
+  type?: AlertType;
+  alert_type?: string; // Backend returns snake_case
+  severity?: AlertSeverity;
   title: string;
   description: string;
-  location: string;
-  createdAt: string;
+  location?: string;
+  affected_areas?: string[];
+  createdAt?: string;
+  created_at?: string; // Backend returns snake_case
   isActive?: boolean;
+  is_active?: boolean | number; // Backend returns snake_case as 0 or 1
+  source?: string;
 }
 
 export default function AlertsPage() {
@@ -47,6 +52,12 @@ export default function AlertsPage() {
   const [severityFilter, setSeverityFilter] = useState<'all' | AlertSeverity>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc'); // Default: newest first
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; alertId: number | null; alertTitle: string }>({
+    isOpen: false,
+    alertId: null,
+    alertTitle: ''
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadAlerts();
@@ -60,8 +71,12 @@ export default function AlertsPage() {
         setIsRefreshing(true);
       }
       const response = await alertsApi.getAll();
+      console.log('📦 Alerts API response:', response);
       if (response.status === 'success') {
-        setAlerts(response.data || []);
+        // Backend returns { alerts: [], total, page, limit }
+        const alertsData = response.data?.alerts || response.data || [];
+        console.log('📊 Alerts data:', alertsData);
+        setAlerts(Array.isArray(alertsData) ? alertsData : []);
       }
     } catch (error) {
       toast.error(handleApiError(error));
@@ -71,15 +86,29 @@ export default function AlertsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this alert?')) return;
+  const handleDelete = async () => {
+    if (!deleteModal.alertId) return;
 
     try {
-      await alertsApi.delete(id);
+      setIsDeleting(true);
+      await alertsApi.delete(deleteModal.alertId);
       toast.success('Alert deleted successfully');
+      setDeleteModal({ isOpen: false, alertId: null, alertTitle: '' });
       loadAlerts(true);
     } catch (error) {
       toast.error(handleApiError(error));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const openDeleteModal = (id: number, title: string) => {
+    setDeleteModal({ isOpen: true, alertId: id, alertTitle: title });
+  };
+
+  const closeDeleteModal = () => {
+    if (!isDeleting) {
+      setDeleteModal({ isOpen: false, alertId: null, alertTitle: '' });
     }
   };
 
@@ -125,18 +154,72 @@ export default function AlertsPage() {
     }
   };
 
-  const filteredAlerts = alerts.filter(alert => {
-    if (filter !== 'all' && alert.type !== filter) return false;
-    if (severityFilter !== 'all' && alert.severity !== severityFilter) return false;
-    if (searchQuery && !alert.title.toLowerCase().includes(searchQuery.toLowerCase()) && 
-        !alert.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  }).sort((a, b) => {
-    // Sort by creation date
-    const dateA = new Date(a.createdAt).getTime();
-    const dateB = new Date(b.createdAt).getTime();
-    return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
-  });
+  const getSourceBadge = (source: string | null | undefined) => {
+    const sourceMap: Record<string, { label: string; color: string; icon: string }> = {
+      // Automated sources
+      'auto_weather': { label: 'Auto Weather', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: '🌦️' },
+      'auto_earthquake': { label: 'Auto Earthquake', color: 'bg-orange-100 text-orange-700 border-orange-200', icon: '🌍' },
+      // Official agencies
+      'PAGASA': { label: 'PAGASA', color: 'bg-purple-100 text-purple-700 border-purple-200', icon: '🌡️' },
+      'PHIVOLCS': { label: 'PHIVOLCS', color: 'bg-orange-100 text-orange-700 border-orange-200', icon: '🌋' },
+      'NDRRMC': { label: 'NDRRMC', color: 'bg-red-100 text-red-700 border-red-200', icon: '🚨' },
+      'LGU': { label: 'LGU', color: 'bg-green-100 text-green-700 border-green-200', icon: '🏛️' },
+      // Other sources
+      'OTHER': { label: 'Other', color: 'bg-gray-100 text-gray-700 border-gray-200', icon: '📋' },
+    };
+
+    // Handle empty, null, undefined, or 'N/A' sources
+    if (!source || source === 'N/A' || source.trim() === '') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border bg-gray-100 text-gray-700 border-gray-200">
+          <span>📝</span>
+          Manual
+        </span>
+      );
+    }
+
+    // Get source info from map or use default
+    const sourceInfo = sourceMap[source] || { label: source, color: 'bg-gray-100 text-gray-700 border-gray-200', icon: '📝' };
+
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border ${sourceInfo.color}`}>
+        <span>{sourceInfo.icon}</span>
+        {sourceInfo.label}
+      </span>
+    );
+  };
+
+  const filteredAlerts = alerts
+    .filter(alert => {
+      // Filter out inactive alerts - check both camelCase and snake_case
+      // Backend returns is_active as number (0 or 1)
+      const isActive = alert.isActive !== undefined ? alert.isActive : alert.is_active;
+      // Keep only alerts where is_active is truthy (1, true) - exclude falsy (0, false, null, undefined)
+      return !!isActive;
+    })
+    .filter(alert => {
+      // Get alert type - handle both camelCase and snake_case
+      const alertType = (alert.type || alert.alert_type) as AlertType;
+      // Get severity - handle empty strings as undefined
+      const alertSeverity = alert.severity || undefined;
+      
+      if (filter !== 'all' && alertType !== filter) return false;
+      if (severityFilter !== 'all' && alertSeverity !== severityFilter) return false;
+      if (searchQuery && !alert.title.toLowerCase().includes(searchQuery.toLowerCase()) && 
+          !alert.description.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => {
+      // Sort by creation date - handle both camelCase and snake_case
+      const dateA = new Date(a.createdAt || a.created_at || 0).getTime();
+      const dateB = new Date(b.createdAt || b.created_at || 0).getTime();
+      return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
+
+  // Debug: Log first alert to see what fields are available
+  if (filteredAlerts.length > 0) {
+    console.log('📋 First alert data:', filteredAlerts[0]);
+    console.log('📋 Alert keys:', Object.keys(filteredAlerts[0]));
+  }
 
   if (isLoading) {
     return (
@@ -150,33 +233,45 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <AlertTriangle className="w-8 h-8 text-emergency-500" />
-              Emergency Alerts
-            </h1>
-            <p className="text-gray-600 mt-1">Create and manage disaster alerts for your community</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => loadAlerts(true)}
-              disabled={isRefreshing}
-              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 shadow-sm hover:shadow-md disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <button
-              onClick={() => router.push('/emergency-alerts/create')}
-              className="px-6 py-2.5 bg-gradient-to-r from-emergency-500 to-emergency-600 text-white rounded-lg hover:from-emergency-600 hover:to-emergency-700 transition-all flex items-center gap-2 shadow-md hover:shadow-lg font-semibold"
-            >
-              <Plus className="w-5 h-5" />
-              Create Alert
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-emergency-50/10 to-gray-50 p-6">
+      {/* Header with Glass Morphism */}
+      <div className="mb-8 relative">
+        {/* Decorative Background */}
+        <div className="absolute inset-0 -z-10 overflow-hidden rounded-3xl">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emergency-500/5 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl"></div>
+        </div>
+        
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 p-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-emergency-500 to-emergency-700 rounded-2xl flex items-center justify-center shadow-lg shadow-emergency-500/30 animate-pulse-slow">
+                <AlertTriangle className="w-8 h-8 text-white" strokeWidth={2.5} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-emergency-700 to-gray-900 bg-clip-text text-transparent mb-1">
+                  Emergency Alerts
+                </h1>
+                <p className="text-gray-600">Create and manage disaster alerts for your community</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => loadAlerts(true)}
+                disabled={isRefreshing}
+                className="px-5 py-2.5 bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 hover:scale-105 active:scale-95"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="font-semibold">Refresh</span>
+              </button>
+              <button
+                onClick={() => router.push('/emergency-alerts/create')}
+                className="px-6 py-2.5 bg-gradient-to-r from-emergency-500 to-emergency-600 text-white rounded-xl hover:from-emergency-600 hover:to-emergency-700 transition-all flex items-center gap-2 shadow-lg shadow-emergency-500/30 hover:shadow-xl hover:shadow-emergency-500/40 font-semibold hover:scale-105 active:scale-95"
+              >
+                <Plus className="w-5 h-5" />
+                Create Alert
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -213,16 +308,18 @@ export default function AlertsPage() {
         />
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-100">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-gray-500" />
-          <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+      {/* Filters and Search with Glass Morphism */}
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 mb-6 border border-white/50">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-600 rounded-xl flex items-center justify-center shadow-md">
+            <Filter className="w-5 h-5 text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">Filters & Search</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Search Alerts
             </label>
             <div className="relative">
@@ -232,20 +329,20 @@ export default function AlertsPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by title or description..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white/90 backdrop-blur-sm shadow-sm hover:shadow-md"
               />
             </div>
           </div>
 
           {/* Type Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Filter by Type
             </label>
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as any)}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white/90 backdrop-blur-sm shadow-sm hover:shadow-md font-medium"
             >
               <option value="all">All Types</option>
               <option value="typhoon">🌪️ Typhoon</option>
@@ -260,13 +357,13 @@ export default function AlertsPage() {
 
           {/* Severity Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Filter by Severity
             </label>
             <select
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value as any)}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white/90 backdrop-blur-sm shadow-sm hover:shadow-md font-medium"
             >
               <option value="all">All Severities</option>
               <option value="critical">🔴 Critical</option>
@@ -278,13 +375,13 @@ export default function AlertsPage() {
 
           {/* Sort Order */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Sort by Date
             </label>
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all bg-white/90 backdrop-blur-sm shadow-sm hover:shadow-md font-medium"
             >
               <option value="desc">📅 Newest First</option>
               <option value="asc">📅 Oldest First</option>
@@ -293,13 +390,14 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* Alerts List */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-        {filteredAlerts.length === 0 ? (
+      {/* Alerts List with Glass Morphism */}
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-white/50">{filteredAlerts.length === 0 ? (
           <div className="text-center py-16">
-            <AlertTriangle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg font-medium mb-2">No alerts found</p>
-            <p className="text-gray-400 text-sm mb-6">
+            <div className="w-20 h-20 bg-gradient-to-br from-gray-200 to-gray-300 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-10 h-10 text-gray-400" />
+            </div>
+            <p className="text-gray-600 text-lg font-bold mb-2">No alerts found</p>
+            <p className="text-gray-500 text-sm mb-6">
               {searchQuery || filter !== 'all' || severityFilter !== 'all' 
                 ? 'Try adjusting your filters' 
                 : 'Create your first emergency alert to get started'}
@@ -307,7 +405,7 @@ export default function AlertsPage() {
             {!searchQuery && filter === 'all' && severityFilter === 'all' && (
               <button
                 onClick={() => router.push('/emergency-alerts/create')}
-                className="px-6 py-2.5 bg-gradient-to-r from-emergency-500 to-emergency-600 text-white rounded-lg hover:from-emergency-600 hover:to-emergency-700 transition-all inline-flex items-center gap-2 shadow-md hover:shadow-lg font-semibold"
+                className="px-6 py-2.5 bg-gradient-to-r from-emergency-500 to-emergency-600 text-white rounded-xl hover:from-emergency-600 hover:to-emergency-700 transition-all inline-flex items-center gap-2 shadow-lg shadow-emergency-500/30 hover:shadow-xl hover:shadow-emergency-500/40 font-semibold hover:scale-105 active:scale-95"
               >
                 <Plus className="w-5 h-5" />
                 Create First Alert
@@ -329,6 +427,9 @@ export default function AlertsPage() {
                     Severity
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Source
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Location
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -340,11 +441,21 @@ export default function AlertsPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAlerts.map((alert) => (
+                {filteredAlerts.map((alert) => {
+                  // Get alert type and severity - handle both camelCase and snake_case
+                  const alertType = (alert.type || alert.alert_type) as AlertType;
+                  const alertSeverity = (alert.severity || 'moderate') as AlertSeverity;
+                  const alertLocation = alert.location || (alert.affected_areas && alert.affected_areas[0]) || 'N/A';
+                  const alertCreatedAt = alert.createdAt || alert.created_at || '';
+                  const alertSource = alert.source; // Pass as-is, getSourceBadge will handle null/undefined/empty
+                  
+
+                  console.log({alertSource});
+                  return (
                   <tr key={alert.id} className="hover:bg-gray-50 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${getSeverityGradient(alert.severity)} flex items-center justify-center flex-shrink-0 shadow-md`}>
+                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${getSeverityGradient(alertSeverity)} flex items-center justify-center flex-shrink-0 shadow-md`}>
                           <AlertTriangle className="w-5 h-5 text-white" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -358,47 +469,58 @@ export default function AlertsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border ${getTypeColor(alert.type)}`}>
-                        {getTypeIcon(alert.type)}
-                        {alert.type}
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border ${getTypeColor(alertType)}`}>
+                        {getTypeIcon(alertType)}
+                        {alertType}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-full border ${getSeverityColor(alert.severity)}`}>
-                        {alert.severity}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-full border ${getSeverityColor(alertSeverity)}`}>
+                          {alertSeverity || 'N/A'}
+                        </span>
+                        {(alert.advanceNoticeHours || alert.advance_notice_hours) && (alert.advanceNoticeHours || alert.advance_notice_hours) > 0 && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                            <Clock className="w-3 h-3" />
+                            {alert.advanceNoticeHours || alert.advance_notice_hours}h
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {getSourceBadge(alertSource)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-sm text-gray-600">
                         <MapPin className="w-4 h-4 text-gray-400" />
-                        {alert.location || 'N/A'}
+                        {alertLocation}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-sm text-gray-600">
                         <Calendar className="w-4 h-4 text-gray-400" />
-                        {format(new Date(alert.createdAt), 'MMM d, yyyy')}
+                        {alertCreatedAt ? format(new Date(alertCreatedAt), 'MMM d, yyyy') : 'N/A'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => router.push(`/emergency-alerts/${alert.id}`)}
-                          className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
+                          className="p-2.5 text-brand-600 hover:bg-brand-50 rounded-xl transition-all hover:scale-110 active:scale-95 shadow-sm hover:shadow-md"
                           title="View Details"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => router.push(`/emergency-alerts/${alert.id}/edit`)}
-                          className="p-2 text-success-600 hover:bg-success-50 rounded-lg transition-all"
+                          className="p-2.5 text-success-600 hover:bg-success-50 rounded-xl transition-all hover:scale-110 active:scale-95 shadow-sm hover:shadow-md"
                           title="Edit Alert"
                         >
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(alert.id)}
-                          className="p-2 text-error-600 hover:bg-error-50 rounded-lg transition-all"
+                          onClick={() => openDeleteModal(alert.id, alert.title)}
+                          className="p-2.5 text-error-600 hover:bg-error-50 rounded-xl transition-all hover:scale-110 active:scale-95 shadow-sm hover:shadow-md"
                           title="Delete Alert"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -406,7 +528,8 @@ export default function AlertsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -420,21 +543,87 @@ export default function AlertsPage() {
           <span className="font-semibold text-gray-900">{alerts.length}</span> alerts
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 transform transition-all">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-error-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-6 h-6 text-error-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Delete Alert</h3>
+                <p className="text-sm text-gray-600">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <p className="text-sm text-gray-700 mb-2">
+                Are you sure you want to delete this alert?
+              </p>
+              <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                {deleteModal.alertTitle}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={closeDeleteModal}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-error-500 to-error-600 text-white rounded-lg hover:from-error-600 hover:to-error-700 transition-all font-medium shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete Alert
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Stat Card Component
+// Stat Card Component with Stunning Visuals
 function StatCard({ title, value, icon, gradient }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`w-12 h-12 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center text-white shadow-lg`}>
-          {icon}
-        </div>
+    <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 p-6 border border-white/50 overflow-hidden group cursor-pointer hover:scale-105">
+      {/* Animated Background Gradient */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
+      
+      {/* Shine Effect */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
       </div>
-      <h3 className="text-gray-600 text-sm font-medium mb-1">{title}</h3>
-      <p className="text-3xl font-bold text-gray-900">{value}</p>
+      
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className={`w-14 h-14 bg-gradient-to-br ${gradient} rounded-2xl flex items-center justify-center text-white shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+            {icon}
+          </div>
+        </div>
+        <h3 className="text-gray-500 text-sm font-semibold mb-2 uppercase tracking-wide">{title}</h3>
+        <p className="text-4xl font-black bg-gradient-to-br from-gray-900 to-gray-600 bg-clip-text text-transparent">{value}</p>
+      </div>
+      
+      {/* Corner Accent */}
+      <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${gradient} opacity-10 rounded-bl-full`}></div>
     </div>
   );
 }

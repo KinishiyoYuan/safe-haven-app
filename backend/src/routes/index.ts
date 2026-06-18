@@ -17,6 +17,8 @@ import smsBlastRoutes from './smsBlast.routes';
 import locationRoutes from './location.routes';
 import notificationRoutes from './notifications.routes';
 import smsWebhookRoutes from './smsWebhook.routes';
+import reservationRoutes from './reservation.routes';
+import incidentTypesRoutes from './incidentTypes';
 
 const router = Router();
 
@@ -26,17 +28,19 @@ router.use('/evacuation-centers', evacuationRoutes);
 router.use('/emergency-contacts', emergencyContactRoutes);
 router.use('/sos', sosRoutes);
 router.use('/incidents', incidentRoutes);
+router.use('/incident-types', incidentTypesRoutes);
 router.use('/groups', groupRoutes);
 router.use('/bulletin', bulletinRoutes);
 router.use('/guides', guideRoutes);
 router.use('/users', userRoutes);
 router.use('/admin', adminRoutes);
-router.use('/admin/weather', weatherRoutes);
+router.use('/weather', weatherRoutes);
 router.use('/admin/earthquakes', earthquakeRoutes);
 router.use('/admin/alert-automation', alertAutomationRoutes);
 router.use('/sms-blast', smsBlastRoutes);
 router.use('/locations', locationRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/webhooks', smsWebhookRoutes);
+router.use('/', reservationRoutes);
 
 export default router;

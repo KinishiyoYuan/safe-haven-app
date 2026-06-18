@@ -2,7 +2,7 @@
   "expo": {
     "name": "SafeHaven",
     "slug": "safehaven-mobile",
-    "version": "2.0.0 nara",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/logo.png",
@@ -44,7 +44,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao"
+          "apiKey": "GOOGLE_MAPS_API_KEY_PLACEHOLDER"
         }
       }
     },
@@ -66,15 +66,15 @@
       ],
       "./plugins/withSilentSMS.js"
     ],
-    "runtimeVersion": "1.0.0",
-    "updates": {
-      "url": "https://u.expo.dev/d9068158-54bd-40c6-8e97-3733b129456c"
-    },
     "extra": {
       "eas": {
-        "projectId": "d9068158-54bd-40c6-8e97-3733b129456c"
+        "projectId": "658ac31a-7930-47e9-9adc-8126ed6a438a"
       },
-      "apiUrl": "https://safe-haven-app-backend.onrender.com/api/v1"
+      "EXPO_PUBLIC_MAPBOX_TOKEN": "MAPBOX_PUBLIC_TOKEN_PLACEHOLDER"
+    },
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/658ac31a-7930-47e9-9adc-8126ed6a438a"
     }
   }
 }

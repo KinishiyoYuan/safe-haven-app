@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { usersApi, handleApiError } from '@/lib/safehaven-api';
+import { useSafeHavenAuth } from '@/context/SafeHavenAuthContext';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import {
@@ -25,7 +26,10 @@ import {
   Mail,
   Phone,
   Calendar,
-  Activity
+  Activity,
+  Edit,
+  Trash2,
+  Save
 } from 'lucide-react';
 
 interface UserData {
@@ -35,6 +39,7 @@ interface UserData {
   first_name: string;
   last_name: string;
   role: string;
+  jurisdiction: string | null;
   is_verified: boolean;
   is_active: boolean;
   created_at: string;
@@ -46,6 +51,7 @@ interface UserData {
 
 export default function UsersListPage() {
   const router = useRouter();
+  const { user: currentUser } = useSafeHavenAuth();
   const [users, setUsers] = useState<UserData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -53,9 +59,12 @@ export default function UsersListPage() {
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('true'); // Default to show only active users
   const [showAddUser, setShowAddUser] = useState(false);
+  const [showEditUser, setShowEditUser] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserData | null>(null);
+  const [userToEdit, setUserToEdit] = useState<UserData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [newUserData, setNewUserData] = useState({
     email: '',
     phone: '',
@@ -68,6 +77,16 @@ export default function UsersListPage() {
     province: '',
     barangay: ''
   });
+  const [editUserData, setEditUserData] = useState({
+    first_name: '',
+    last_name: '',
+    role: 'citizen',
+    jurisdiction: '',
+    city: '',
+    province: '',
+    barangay: '',
+    is_active: true
+  });
   const [stats, setStats] = useState({
     total_users: 0,
     active_users: 0,
@@ -78,6 +97,12 @@ export default function UsersListPage() {
     new_this_week: 0,
     new_this_month: 0
   });
+
+  // Check if current user can delete users (only super_admin)
+  const canDeleteUsers = currentUser?.role === 'super_admin';
+  
+  // Check if current user can manage users (super_admin, admin, mdrrmo)
+  const canManageUsers = ['super_admin', 'admin', 'mdrrmo'].includes(currentUser?.role || '');
 
   useEffect(() => {
     loadUsers();
@@ -126,6 +151,21 @@ export default function UsersListPage() {
 
   const handleSearch = () => {
     loadUsers();
+  };
+
+  const handleEditClick = (user: UserData) => {
+    setUserToEdit(user);
+    setEditUserData({
+      first_name: user.first_name,
+      last_name: user.last_name,
+      role: user.role,
+      jurisdiction: user.jurisdiction || '',
+      city: user.city || '',
+      province: user.province || '',
+      barangay: '',
+      is_active: user.is_active
+    });
+    setShowEditUser(true);
   };
 
   const handleDeleteClick = (user: UserData) => {
@@ -187,6 +227,40 @@ export default function UsersListPage() {
     }
   };
 
+  const handleUpdateUser = async () => {
+    if (!userToEdit) return;
+
+    // Validate required fields
+    if (!editUserData.first_name || !editUserData.last_name) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      await usersApi.update(userToEdit.id, editUserData);
+      toast.success('User updated successfully');
+      setShowEditUser(false);
+      setUserToEdit(null);
+      setEditUserData({
+        first_name: '',
+        last_name: '',
+        role: 'citizen',
+        jurisdiction: '',
+        city: '',
+        province: '',
+        barangay: '',
+        is_active: true
+      });
+      loadUsers(true);
+      loadStatistics();
+    } catch (error) {
+      toast.error(handleApiError(error));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const needsJurisdiction = (role: string) => {
     return ['admin', 'pnp', 'bfp', 'mdrrmo', 'lgu_officer'].includes(role);
   };
@@ -236,33 +310,50 @@ export default function UsersListPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <Users className="w-8 h-8 text-brand-500" />
-              User Management
-            </h1>
-            <p className="text-gray-600 mt-1">Manage app users and their permissions</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => loadUsers(true)}
-              disabled={isRefreshing}
-              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-all flex items-center gap-2 shadow-sm hover:shadow-md disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            <button
-              onClick={() => setShowAddUser(true)}
-              className="px-4 py-2 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all flex items-center gap-2 shadow-md hover:shadow-lg font-semibold"
-            >
-              <Plus className="w-4 h-4" />
-              Add User
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-brand-50/10 to-gray-50 p-6">
+      {/* Header with Glass Morphism */}
+      <div className="mb-8 relative">
+        {/* Decorative Background */}
+        <div className="absolute inset-0 -z-10 overflow-hidden rounded-3xl">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/5 rounded-full blur-3xl animate-pulse-slow"></div>
+          <div className="absolute bottom-0 left-0 w-96 h-96 bg-info-500/5 rounded-full blur-3xl"></div>
+        </div>
+        
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/50 p-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gradient-to-br from-brand-500 to-brand-700 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-500/30 animate-pulse-slow">
+                <Users className="w-8 h-8 text-white" strokeWidth={2.5} />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-brand-700 to-gray-900 bg-clip-text text-transparent mb-1">
+                  User Management
+                </h1>
+                <p className="text-gray-600 flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-brand-500" />
+                  Manage app users and their permissions
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => loadUsers(true)}
+                disabled={isRefreshing}
+                className="px-5 py-2.5 bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-all flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 hover:scale-105 active:scale-95"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="font-semibold">Refresh</span>
+              </button>
+              {canManageUsers && (
+                <button
+                  onClick={() => setShowAddUser(true)}
+                  className="px-6 py-2.5 bg-gradient-to-r from-brand-500 to-brand-600 text-white rounded-xl hover:from-brand-600 hover:to-brand-700 transition-all flex items-center gap-2 shadow-lg shadow-brand-500/30 hover:shadow-xl hover:shadow-brand-500/40 font-semibold hover:scale-105 active:scale-95"
+                >
+                  <Plus className="w-5 h-5" />
+                  Add User
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -389,16 +480,18 @@ export default function UsersListPage() {
         </InfoCard>
       </div>
 
-      {/* Filters and Search */}
-      <div className="bg-white rounded-xl shadow-md p-6 mb-6 border border-gray-100">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-gray-500" />
+      {/* Filters and Search with Glass Morphism */}
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 mb-6 border border-white/50 hover:shadow-xl transition-all duration-300">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-brand-600 rounded-xl flex items-center justify-center shadow-md">
+            <Filter className="w-5 h-5 text-white" />
+          </div>
           <h2 className="text-lg font-bold text-gray-900">Filters</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Search */}
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Search Users
             </label>
             <div className="flex gap-2">
@@ -410,12 +503,12 @@ export default function UsersListPage() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Search by name, email, or phone..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all backdrop-blur-sm"
                 />
               </div>
               <button
                 onClick={handleSearch}
-                className="px-6 py-2.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all font-semibold"
+                className="px-6 py-2.5 bg-gradient-to-r from-brand-500 to-brand-600 text-white rounded-xl hover:from-brand-600 hover:to-brand-700 transition-all font-semibold shadow-md hover:shadow-lg hover:scale-105 active:scale-95"
               >
                 Search
               </button>
@@ -424,13 +517,13 @@ export default function UsersListPage() {
 
           {/* Role Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Filter by Role
             </label>
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all backdrop-blur-sm"
             >
               <option value="">All Roles</option>
               <option value="user">👤 User</option>
@@ -441,13 +534,13 @@ export default function UsersListPage() {
 
           {/* Status Filter */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Filter by Status
             </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all backdrop-blur-sm"
             >
               <option value="">All Status</option>
               <option value="true">✅ Active</option>
@@ -457,11 +550,13 @@ export default function UsersListPage() {
         </div>
       </div>
 
-      {/* Users List */}
-      <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
+      {/* Users List with Glass Morphism */}
+      <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg overflow-hidden border border-white/50 hover:shadow-xl transition-all duration-300">
         {filteredUsers.length === 0 ? (
           <div className="text-center py-16">
-            <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <div className="w-20 h-20 bg-gradient-to-br from-gray-400 to-gray-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+              <Users className="w-10 h-10 text-white" />
+            </div>
             <p className="text-gray-500 text-lg font-medium mb-2">No users found</p>
             <p className="text-gray-400 text-sm">
               {searchTerm ? 'Try adjusting your search or filters' : 'No users in the system'}
@@ -578,19 +673,33 @@ export default function UsersListPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => router.push(`/users/${user.id}`)}
-                            className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg transition-all"
-                            title="View Details"
+                            className="px-3 py-1.5 text-brand-600 hover:bg-brand-50 rounded-lg transition-all flex items-center gap-1.5 text-sm font-medium hover:scale-110 active:scale-95"
+                            title="View user details"
                           >
                             <Eye className="w-4 h-4" />
+                            Details
                           </button>
-                          <button
-                            onClick={() => handleDeleteClick(user)}
-                            className="p-2 text-error-600 hover:bg-error-50 rounded-lg transition-all"
-                            title="Delete User"
-                            disabled={!user.is_active}
-                          >
-                            <UserX className="w-4 h-4" />
-                          </button>
+                          {canManageUsers && (
+                            <button
+                              onClick={() => handleEditClick(user)}
+                              className="px-3 py-1.5 text-info-600 hover:bg-info-50 rounded-lg transition-all flex items-center gap-1.5 text-sm font-medium hover:scale-110 active:scale-95"
+                              title="Edit user"
+                            >
+                              <Edit className="w-4 h-4" />
+                              Edit
+                            </button>
+                          )}
+                          {canDeleteUsers && (
+                            <button
+                              onClick={() => handleDeleteClick(user)}
+                              className="px-3 py-1.5 text-error-600 hover:bg-error-50 rounded-lg transition-all flex items-center gap-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:scale-110 active:scale-95"
+                              title={!user.is_active ? 'User already inactive' : 'Delete user'}
+                              disabled={!user.is_active}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -607,6 +716,199 @@ export default function UsersListPage() {
         <div className="mt-4 text-center text-sm text-gray-600">
           Showing <span className="font-semibold text-gray-900">{filteredUsers.length}</span> of{' '}
           <span className="font-semibold text-gray-900">{users.length}</span> users
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditUser && userToEdit && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-2xl font-bold text-gray-900">Edit User</h2>
+              <p className="text-gray-600 mt-1">Update user information</p>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Personal Information */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      First Name <span className="text-error-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editUserData.first_name}
+                      onChange={(e) => setEditUserData({ ...editUserData, first_name: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="Juan"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Last Name <span className="text-error-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editUserData.last_name}
+                      onChange={(e) => setEditUserData({ ...editUserData, last_name: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="Dela Cruz"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Account Details */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Account Details</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                    <input
+                      type="email"
+                      value={userToEdit.email}
+                      disabled
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      value={userToEdit.phone}
+                      disabled
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Phone cannot be changed</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Role <span className="text-error-500">*</span>
+                    </label>
+                    <select
+                      value={editUserData.role}
+                      onChange={(e) => setEditUserData({ ...editUserData, role: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                    >
+                      <option value="citizen">👤 Citizen - Regular app user</option>
+                      <option value="lgu_officer">👮 LGU Officer - Local government officer</option>
+                      <option value="mdrrmo">🚨 MDRRMO - Disaster management officer</option>
+                      <option value="bfp">🚒 BFP - Bureau of Fire Protection</option>
+                      <option value="pnp">👮‍♂️ PNP - Philippine National Police</option>
+                      <option value="admin">🛡️ Admin - System administrator</option>
+                      <option value="super_admin">⭐ Super Admin - Full system access</option>
+                    </select>
+                  </div>
+                  {needsJurisdiction(editUserData.role) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Jurisdiction
+                      </label>
+                      <input
+                        type="text"
+                        value={editUserData.jurisdiction}
+                        onChange={(e) => setEditUserData({ ...editUserData, jurisdiction: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                        placeholder="e.g., Legazpi City, Albay Province"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Account Status <span className="text-error-500">*</span>
+                    </label>
+                    <select
+                      value={editUserData.is_active ? 'true' : 'false'}
+                      onChange={(e) => setEditUserData({ ...editUserData, is_active: e.target.value === 'true' })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                    >
+                      <option value="true">✅ Active</option>
+                      <option value="false">❌ Inactive</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Location (Optional) */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Location (Optional)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                    <input
+                      type="text"
+                      value={editUserData.city}
+                      onChange={(e) => setEditUserData({ ...editUserData, city: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="Legazpi City"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Province</label>
+                    <input
+                      type="text"
+                      value={editUserData.province}
+                      onChange={(e) => setEditUserData({ ...editUserData, province: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="Albay"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Barangay</label>
+                    <input
+                      type="text"
+                      value={editUserData.barangay}
+                      onChange={(e) => setEditUserData({ ...editUserData, barangay: e.target.value })}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      placeholder="Barangay 1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowEditUser(false);
+                  setUserToEdit(null);
+                  setEditUserData({
+                    first_name: '',
+                    last_name: '',
+                    role: 'citizen',
+                    jurisdiction: '',
+                    city: '',
+                    province: '',
+                    barangay: '',
+                    is_active: true
+                  });
+                }}
+                className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateUser}
+                disabled={isUpdating}
+                className="px-6 py-2.5 bg-brand-500 text-white rounded-lg hover:bg-brand-600 transition-all font-semibold shadow-md hover:shadow-lg flex items-center gap-2 disabled:opacity-50"
+              >
+                {isUpdating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Update User
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -887,43 +1189,58 @@ export default function UsersListPage() {
   );
 }
 
-// Stat Card Component
+// Stat Card Component with Stunning Visuals
 function StatCard({ title, value, subtitle, icon, gradient }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100 hover:shadow-lg transition-shadow">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`w-12 h-12 bg-gradient-to-br ${gradient} rounded-xl flex items-center justify-center text-white shadow-lg`}>
-          {icon}
-        </div>
+    <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 p-6 border border-white/50 overflow-hidden group hover:scale-105">
+      {/* Shine Effect */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
       </div>
-      <h3 className="text-gray-600 text-sm font-medium mb-1">{title}</h3>
-      <p className="text-3xl font-bold text-gray-900 mb-1">{value}</p>
-      <p className="text-xs text-gray-500">{subtitle}</p>
+      
+      <div className="relative z-10">
+        <div className="flex items-center justify-between mb-4">
+          <div className={`w-14 h-14 bg-gradient-to-br ${gradient} rounded-2xl flex items-center justify-center text-white shadow-xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+            {icon}
+          </div>
+        </div>
+        <h3 className="text-gray-500 text-sm font-semibold mb-2 uppercase tracking-wide">{title}</h3>
+        <p className="text-4xl font-black bg-gradient-to-br from-gray-900 to-gray-600 bg-clip-text text-transparent mb-1">{value}</p>
+        <p className="text-sm text-gray-600 font-medium">{subtitle}</p>
+      </div>
+      
+      {/* Corner Accent */}
+      <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${gradient} opacity-10 rounded-bl-full`}></div>
     </div>
   );
 }
 
-// Info Card Component
+// Info Card Component with Glass Morphism
 function InfoCard({ title, icon, iconColor, iconBg, children }: any) {
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
-      <div className="flex items-center gap-3 mb-4">
-        <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center ${iconColor}`}>
-          {icon}
+    <div className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-white/50 transition-all duration-300 hover:shadow-xl overflow-hidden group">
+      {/* Decorative Background */}
+      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-brand-500/5 to-transparent rounded-bl-full"></div>
+      
+      <div className="relative z-10">
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`w-12 h-12 ${iconBg} rounded-xl flex items-center justify-center ${iconColor} shadow-md group-hover:scale-110 transition-transform duration-300`}>
+            {icon}
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
         </div>
-        <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+        {children}
       </div>
-      {children}
     </div>
   );
 }
 
-// Status Row Component
+// Status Row Component with Hover Effects
 function StatusRow({ label, value, color, bgColor, prefix = '' }: any) {
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-sm text-gray-600 font-medium">{label}</span>
-      <span className={`${color} font-bold text-lg px-3 py-1 ${bgColor} rounded-lg`}>
+    <div className="flex justify-between items-center group/row hover:bg-gray-50/50 p-2 rounded-lg transition-colors">
+      <span className="text-sm text-gray-700 font-semibold">{label}</span>
+      <span className={`${color} font-black text-lg px-4 py-1.5 ${bgColor} rounded-xl shadow-sm group-hover/row:scale-105 transition-transform`}>
         {prefix}{value}
       </span>
     </div>
