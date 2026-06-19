@@ -1,22 +1,22 @@
 import mysql from 'mysql2/promise';
 import { logger } from '../utils/logger';
+import dotenv from 'dotenv';
+dotenv.config();
 
-console.log({db:process.env.DB_HOST});
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'database-1.cjuyw8m4ev18.ap-southeast-2.rds.amazonaws.com',
+  host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER || 'admin',
-  password: process.env.DB_PASSWORD || 'MirandaFam123',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'safehaven_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  timezone: '+08:00' // Philippine timezone (UTC+8)
+  timezone: '+08:00'
 });
 
-// Test connection
 pool.getConnection()
   .then(connection => {
     logger.info('Database connected successfully');
